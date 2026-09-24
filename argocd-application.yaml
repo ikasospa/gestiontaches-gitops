@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: gestiontache-app
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: 'https://github.com/ikasospa/gestiontaches-gitops.git' # <-- Remplacez par votre URL GitHub
+    targetRevision: HEAD
+    path: '.' # Ou le sous-dossier contenant vos YAMLs si séparé
+  destination:
+    server: 'https://kubernetes.default.svc'
+    namespace: dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
