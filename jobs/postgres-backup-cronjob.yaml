@@ -1,0 +1,44 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+  namespace: postgres
+spec:
+  # Tous les jours à 02h00. Adapter le fuseau horaire du cluster si besoin.
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 7
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 900
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: pg-dump
+              image: postgres:17-alpine
+              envFrom:
+                - secretRef:
+                    name: postgres-secret
+              command:
+                - sh
+                - -c
+                - |
+                  set -e
+                  STAMP=$(date +%Y%m%d-%H%M%S)
+                  FILE="/backups/${POSTGRES_DB}-${STAMP}.sql.gz"
+                  echo "Sauvegarde de ${POSTGRES_DB} vers ${FILE}"
+                  pg_dump -h postgres.postgres.svc.cluster.local -U "${POSTGRES_USER}" "${POSTGRES_DB}" \
+                    | gzip > "${FILE}"
+                  echo "Sauvegarde terminée : $(du -h ${FILE})"
+                  # Rétention : ne garder que les 14 derniers fichiers
+                  cd /backups && ls -1t *.sql.gz | tail -n +15 | xargs -r rm --
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: postgres-backup-pvc

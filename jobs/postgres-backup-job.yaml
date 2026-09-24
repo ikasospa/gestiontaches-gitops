@@ -1,0 +1,36 @@
+# Sauvegarde immédiate, hors planification (ex. avant une migration).
+# Équivalent pratique : kubectl create job --from=cronjob/postgres-backup postgres-backup-manuel -n postgres
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postgres-backup-manuel
+  namespace: postgres
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 900
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: pg-dump
+          image: postgres:17-alpine
+          envFrom:
+            - secretRef:
+                name: postgres-secret
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              STAMP=$(date +%Y%m%d-%H%M%S)
+              FILE="/backups/${POSTGRES_DB}-manuel-${STAMP}.sql.gz"
+              pg_dump -h postgres.postgres.svc.cluster.local -U "${POSTGRES_USER}" "${POSTGRES_DB}" \
+                | gzip > "${FILE}"
+              echo "Sauvegarde manuelle terminée : $(du -h ${FILE})"
+          volumeMounts:
+            - name: backups
+              mountPath: /backups
+      volumes:
+        - name: backups
+          persistentVolumeClaim:
+            claimName: postgres-backup-pvc

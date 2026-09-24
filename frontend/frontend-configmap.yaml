@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: gestion-tache
+data:
+  # Configuration serveur — montée dans le conteneur en remplacement
+  # du nginx.conf autrefois embarqué dans l'image (voir Deployment).
+  nginx.conf: |
+    server {
+        listen 8080;
+        server_name _;
+        root /usr/share/nginx/html;
+        index index.html;
+ 
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+ 
+        location = /healthz {
+            return 200 "ok\n";
+            add_header Content-Type text/plain;
+        }
+    }
+ 
+  # Consommée par docker-entrypoint.sh au démarrage du Pod pour générer config.js.
+  API_BASE_URL: "http://192.168.56.56:5000"

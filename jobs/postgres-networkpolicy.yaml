@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-allow-stateful-flask-only
+  namespace: postgres
+spec:
+  # S'applique à tous les Pods portant ce label — ici, le Pod postgres.
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        # Double condition : namespace ET label du Pod source doivent
+        # matcher simultanément. namespaceSelector seul autoriserait
+        # N'IMPORTE QUEL Pod du namespace stateful-flask, pas seulement
+        # l'application elle-même.
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gestion-tache
+          podSelector:
+            matchLabels:
+              app: stateful-flask
+      ports:
+        - protocol: TCP
+          port: 5432

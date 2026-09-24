@@ -1,0 +1,26 @@
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: postgres-vpa
+  namespace: postgres
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: postgres
+  updatePolicy:
+    # "Auto" recrée le Pod avec les nouvelles requests/limits calculées.
+    # C'est acceptable ici car le Deployment postgres utilise déjà
+    # strategy.type: Recreate , une seule réplique, pas de risque
+    # d'incohérence entre deux versions du Pod en parallèle.
+    updateMode: "Auto"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: postgres
+        minAllowed:
+          cpu: 100m
+          memory: 128Mi
+        maxAllowed:
+          cpu: 2
+          memory: 2Gi
+        controlledResources: ["cpu", "memory"]
