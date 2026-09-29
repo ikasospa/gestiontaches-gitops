@@ -13,6 +13,7 @@ spec:
     # INDISPENSABLE : scanne récursivement TOUS les sous-dossiers
     directory:
       recurse: true
+      exclude: 'argocd-application.yaml'
   destination:
     server: 'https://kubernetes.default.svc'
     # laisser vide ou utiliser "default" car les manifests
