@@ -1,24 +1,19 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: gestiontache-app
+  name: backend-app
   namespace: argocd
 spec:
   project: default
   source:
     repoURL: 'https://github.com/ikasospa/gestiontaches-gitops.git'
     targetRevision: HEAD
-    # Racine du dépôt
-    path: '.'
-    # INDISPENSABLE : scanne récursivement TOUS les sous-dossiers
+    path: backend
     directory:
       recurse: true
-      exclude: 'argocd-application.yaml'
   destination:
     server: 'https://kubernetes.default.svc'
-    # laisser vide ou utiliser "default" car les manifests
-    # déclarent eux-mêmes leur namespace (gestion-tache, postgres, etc.)
-    namespace: default
+    namespace: gestion-tache
   syncPolicy:
     automated:
       prune: true
