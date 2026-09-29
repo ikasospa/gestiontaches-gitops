@@ -1,31 +1,117 @@
+# ============================================================
+# Nom du workflow (visible dans l'onglet Actions de GitHub)
+# ============================================================
 name: CI/CD Backend Pipeline
 
+# ============================================================
+# Déclencheurs du workflow
+# ============================================================
 on:
   push:
-    branches:
-      - main
+    # Uniquement sur la branche main
+    branches: [main]
+    # Filtre de chemins : le workflow ne se lance que si ces fichiers changent.
+    # On inclut le manifeste K8s lui-même pour que les modifications du pipeline
+    # soient aussi testées.
     paths:
-      - 'backend/**'
+      - "backend/**"
+      - ".github/workflows/ci-cd.yml"
 
+# ============================================================
+# Permissions du GITHUB_TOKEN pour ce workflow.
+# "contents: write" est OBLIGATOIRE pour pouvoir commit/push le manifeste.
+# ============================================================
+permissions:
+  contents: write
+
+# ============================================================
+# Définition des jobs
+# ============================================================
 jobs:
+
+  # ============================================================
+  # JOB 1 : Build et push de l'image Docker sur Docker Hub
+  # ============================================================
   build-and-push:
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout du code
-        uses: actions/checkout@v3
 
-      - name: Connexion à Docker Hub
-        uses: docker/login-action@v2
+    # Sorties du job, réutilisables par les jobs suivants via needs.<job>.outputs.<nom>
+    outputs:
+      image_tag: ${{ steps.vars.outputs.sha_short }}
+
+    steps:
+      # --- Étape 1 : Récupérer le code du dépôt ---
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0   # Historique complet (utile pour certains outils)
+
+      # --- Étape 2 : Calculer le tag d'image (SHA court du commit) ---
+      - name: Définir le tag (SHA du commit)
+        id: vars
+        # ${GITHUB_SHA::7} = 7 premiers caractères du SHA du commit courant
+        # On écrit le résultat dans $GITHUB_OUTPUT pour le rendre disponible
+        run: echo "sha_short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      # --- Étape 3 : Authentification à Docker Hub ---
+      - name: Connexion Docker Hub
+        uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build et Push de l'image Backend
-        uses: docker/build-push-action@v4
+      # --- Étape 4 : Build et push de l'image ---
+      # ⚠️Nom d'image aligné sur le manifeste : "stateful-flask"
+      - name: Build et push de l'image
+        uses: docker/build-push-action@v6
         with:
+          # Dossier de contexte (là où se trouve le Dockerfile)
           context: ./backend
-          file: ./backend/Dockerfile
+          # Pousse l'image après le build
           push: true
+          # Deux tags : un immuable (SHA) + un mobile (latest)
           tags: |
-            ikasospa/stateful-flask:${{ github.sha }}
-            ikasospa/stateful-flask:latest
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/stateful-flask:${{ steps.vars.outputs.sha_short }}
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/stateful-flask:latest
+
+  # ============================================================
+  # JOB 2 : Mise à jour du manifeste K8s (approche GitOps)
+  # ============================================================
+  update-manifest:
+    # Démarre uniquement après la réussite du job de build
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      # --- Étape 1 : Checkout pour pouvoir modifier le manifeste ---
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # --- Étape 2 : Remplacement de la ligne "image:" dans le manifeste ---
+      # ⚠️Fichier ciblé : backend/gestion-flask.yaml (ton vrai manifeste)
+      # ⚠️Motif ciblé : "stateful-flask" (le vrai nom d'image)
+      - name: "Mettre à jour la ligne image: dans backend/gestion-flask.yaml"
+        run: |
+          sed -i "s|image: docker.io/.*/stateful-flask:.*|image: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/stateful-flask:${{ needs.build-and-push.outputs.image_tag }}|" backend/gestion-flask.yaml
+          # Affiche le résultat dans les logs (pratique pour le debug)
+          cat backend/gestion-flask.yaml
+
+      # --- Étape 3 : Commit + push du manifeste mis à jour ---
+      - name: Commit et push (GitOps)
+        run: |
+          # Configuration de l'identité Git du bot
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Ajout du fichier modifié
+          git add backend/gestion-flask.yaml
+          # Si aucun changement → sortie propre (pas d'erreur)
+          git diff --cached --quiet && echo "Rien à committer" && exit 0
+          # Commit avec le tag d'image + [skip ci] pour éviter la boucle infinie
+          git commit -m "ci: déploiement de l'image ${{ needs.build-and-push.outputs.image_tag }} [skip ci]"
+          # Rebase pour éviter les conflits avec d'autres commits
+          git pull --rebase origin main
+          # Push sur main → ArgoCD détecte et synchronise
+          git push
