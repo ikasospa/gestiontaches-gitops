@@ -108,6 +108,10 @@ def health():
 def handle_error(e):
     return jsonify({"error": e.description}), e.code
 
+# Modification pour la demo
+@app.route('/')
+def hello():
+    return "Bienvenue sur l'application de Gestion de Tâches v2.0 (GitOps Demo)!"
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
