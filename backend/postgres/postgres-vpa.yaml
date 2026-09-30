@@ -13,7 +13,7 @@ spec:
     # C'est acceptable ici car le Deployment postgres utilise déjà
     # strategy.type: Recreate , une seule réplique, pas de risque
     # d'incohérence entre deux versions du Pod en parallèle.
-    updateMode: "Auto"
+    updateMode: "Off"
   resourcePolicy:
     containerPolicies:
       - containerName: postgres
