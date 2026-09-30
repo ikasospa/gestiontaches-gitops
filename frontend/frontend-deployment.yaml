@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: ikasospa/frontend:v0
+          image: docker.io/ikasospa/frontend:86e5cc3
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
