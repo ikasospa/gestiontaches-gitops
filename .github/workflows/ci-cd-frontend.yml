@@ -1,0 +1,67 @@
+name: CI/CD Frontend Pipeline
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/ci-cd-frontend.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.vars.outputs.sha_short }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Définir le tag (SHA du commit)
+        id: vars
+        run: echo "sha_short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Connexion Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build et push de l'image frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frontend:${{ steps.vars.outputs.sha_short }}
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frontend:latest
+
+  update-manifest:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "Mettre à jour la ligne image: dans frontend/frontend-deployment.yaml"
+        run: |
+          # sed -i "s|image: docker.io/.*/frontend:.*|image: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frontend:${{ needs.build-and-push.outputs.image_tag }}|" frontend/frontend-deployment.yaml
+          sed -i "s|image: .*frontend:.*|image: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/frontend:${{ needs.build-and-push.outputs.image_tag }}|" frontend/frontend-deployment.yaml
+          cat frontend/frontend-deployment.yaml
+
+      - name: Commit et push (GitOps)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add frontend/frontend-deployment.yaml
+          git diff --cached --quiet && echo "Rien à committer" && exit 0
+          git commit -m "ci: déploiement frontend ${{ needs.build-and-push.outputs.image_tag }} [skip ci]"
+          git pull --rebase origin main
+          git push
