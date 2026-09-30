@@ -21,7 +21,7 @@ spec:
             - 'until nc -z postgres.postgres.svc.cluster.local 5432; do sleep 3; done'
       containers:
         - name: stateful-flask
-          image: docker.io/ikasospa/stateful-flask:a9eebde
+          image: docker.io/ikasospa/stateful-flask:86e5cc3
           imagePullPolicy: Always
           ports:
             - containerPort: 5000
